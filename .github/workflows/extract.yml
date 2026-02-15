@@ -1,0 +1,75 @@
+name: Extract Boot Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      firmware_url:
+        description: "Direct link firmware .rar"
+        required: true
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Show Disk Space Before
+        run: df -h
+
+      - name: Install Required Tools
+        run: |
+          sudo apt update
+          sudo apt install -y p7zip-full unzip wget curl
+
+      - name: Download Firmware
+        run: |
+          echo "Downloading firmware..."
+          wget -O firmware.rar "${{ github.event.inputs.firmware_url }}"
+
+      - name: Show File Size
+        run: ls -lh firmware.rar
+
+      - name: Extract Firmware
+        run: |
+          mkdir firmware
+          7z x firmware.rar -ofirmware
+
+      - name: Delete Original Firmware (Free Space)
+        run: rm -f firmware.rar
+
+      - name: Search boot.img
+        run: |
+          echo "Searching boot.img..."
+          BOOT_PATH=$(find firmware -type f -name "boot.img" | head -n 1)
+
+          if [ -z "$BOOT_PATH" ]; then
+            echo "boot.img not found!"
+            exit 1
+          fi
+
+          echo "Found at $BOOT_PATH"
+          cp "$BOOT_PATH" boot.img
+
+      - name: Show boot.img info
+        run: ls -lh boot.img
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-image
+          path: boot.img
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: boot-${{ github.run_number }}
+          name: Boot Image ${{ github.run_number }}
+          files: boot.img
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Show Disk Space After
+        run: df -h
