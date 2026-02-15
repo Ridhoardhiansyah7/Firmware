@@ -1,0 +1,40 @@
+name: List OTA Files
+
+on:
+  workflow_dispatch:
+    inputs:
+      firmware_url:
+        description: "Direct Realme OTA zip link"
+        required: true
+
+jobs:
+  list_files:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Tools
+        run: sudo apt update && sudo apt install -y unzip aria2
+
+      - name: Download OTA
+        run: |
+          echo "Downloading OTA zip..."
+          aria2c -x 16 -s 16 -k 1M "${{ github.event.inputs.firmware_url }}" -o firmware.zip
+
+      - name: Extract OTA
+        run: unzip firmware.zip -d firmware
+
+      - name: List All Files
+        run: |
+          echo "All files in firmware:"
+          find firmware -type f | sort > firmware_file_list.txt
+          cat firmware_file_list.txt
+
+      - name: Upload File List
+        uses: actions/upload-artifact@v4
+        with:
+          name: ota-file-list
+          path: firmware_file_list.txt
