@@ -63,15 +63,15 @@ jobs:
 
       - name: Find boot.img
         run: |
-          BOOT_PATH=$(find firmware -type f -name "boot.img" | head -n 1)
+          BOOT_PATH=$(find firmware -type f -name "boot_a.img" | head -n 1)
 
           if [ -z "$BOOT_PATH" ]; then
-            echo "boot.img not found!"
+            echo "boot_a.img not found!"
             exit 1
           fi
 
           echo "Boot image found at $BOOT_PATH"
-          cp "$BOOT_PATH" boot.img
+          cp "$BOOT_PATH" boot_a.img
 
       - name: Show boot.img info
         run: ls -lh boot.img
