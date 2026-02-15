@@ -1,0 +1,69 @@
+name: Extract Boot Image Realme MTK
+
+on:
+  workflow_dispatch:
+    inputs:
+      firmware_url:
+        description: "Direct Realme OTA zip link (.zip)"
+        required: true
+
+jobs:
+  extract_boot:
+    runs-on: ubuntu-latest
+    permissions:
+        contents: write
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Tools
+        run: sudo apt update && sudo apt install -y unzip aria2
+
+      - name: Download OTA
+        run: |
+          echo "Downloading OTA zip..."
+          aria2c -x 16 -s 16 -k 1M "${{ github.event.inputs.firmware_url }}" -o firmware.zip
+
+      - name: Extract OTA
+        run: unzip firmware.zip -d firmware
+
+      - name: Copy Images
+        run: |
+          mkdir output
+
+          # boot wajib ada
+          if [ ! -f firmware/IMAGES/boot.img ]; then
+            echo "boot.img not found!"
+            exit 1
+          fi
+          cp firmware/IMAGES/boot.img output/
+
+          # Tambahan image (optional)
+          for img in system vendor product system_ext; do
+            if [ -f firmware/IMAGES/$img.img ]; then
+              echo "$img.img found"
+              cp firmware/IMAGES/$img.img output/
+            else
+              echo "$img.img not found (skip)"
+            fi
+          done
+
+          echo "Final files:"
+          ls -lh output
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: extracted-images
+          path: output/*
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: images-${{ github.run_number }}
+          name: Extracted Images ${{ github.run_number }}
+          files: output/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
