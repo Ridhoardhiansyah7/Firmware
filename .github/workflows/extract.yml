@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       firmware_url:
-        description: "Direct link firmware .rar"
+        description: "MediaFire link"
         required: true
 
 jobs:
@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: Checkout Repo
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Show Disk Space Before
@@ -22,14 +22,35 @@ jobs:
       - name: Install Required Tools
         run: |
           sudo apt update
-          sudo apt install -y p7zip-full unzip wget curl
+          sudo apt install -y p7zip-full aria2 curl
 
-      - name: Download Firmware
+      - name: Get Direct MediaFire Link
         run: |
-          echo "Downloading firmware..."
-          wget -O firmware.rar "${{ github.event.inputs.firmware_url }}"
+          echo "Fetching MediaFire page..."
+          PAGE=$(curl -L -s "${{ github.event.inputs.firmware_url }}")
 
-      - name: Show File Size
+          DOWNLOAD_LINK=$(echo "$PAGE" | grep -o 'https://download[^"]*')
+
+          if [ -z "$DOWNLOAD_LINK" ]; then
+            echo "Failed to extract direct download link."
+            exit 1
+          fi
+
+          echo "Direct link found:"
+          echo $DOWNLOAD_LINK
+
+          echo "DOWNLOAD_LINK=$DOWNLOAD_LINK" >> $GITHUB_ENV
+
+      - name: Download Firmware (aria2 multi-connection)
+        run: |
+          aria2c \
+          -x 16 -s 16 -k 1M \
+          --retry-wait=5 \
+          --max-tries=10 \
+          "$DOWNLOAD_LINK" \
+          -o firmware.rar
+
+      - name: Verify File Size
         run: ls -lh firmware.rar
 
       - name: Extract Firmware
@@ -37,12 +58,11 @@ jobs:
           mkdir firmware
           7z x firmware.rar -ofirmware
 
-      - name: Delete Original Firmware (Free Space)
+      - name: Remove Large RAR (Free Space)
         run: rm -f firmware.rar
 
-      - name: Search boot.img
+      - name: Find boot.img
         run: |
-          echo "Searching boot.img..."
           BOOT_PATH=$(find firmware -type f -name "boot.img" | head -n 1)
 
           if [ -z "$BOOT_PATH" ]; then
@@ -50,7 +70,7 @@ jobs:
             exit 1
           fi
 
-          echo "Found at $BOOT_PATH"
+          echo "Boot image found at $BOOT_PATH"
           cp "$BOOT_PATH" boot.img
 
       - name: Show boot.img info
