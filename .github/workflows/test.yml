@@ -54,4 +54,4 @@ jobs:
           name: Boot Image ${{ github.run_number }}
           files: boot.img
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
