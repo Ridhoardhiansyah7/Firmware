@@ -8,12 +8,10 @@ on:
         required: true
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
   extract_boot:
     runs-on: ubuntu-latest
+    permissions:
+        contents: write
     timeout-minutes: 180
 
     steps:
