@@ -1,0 +1,96 @@
+name: Extract Kernel & Ramdisk (MediaFire)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mediafire_url:
+        description: "MediaFire File Page URL"
+        required: true
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y wget curl unzip gzip file grep sed zip cpio
+
+      - name: Get Direct Download Link
+        id: mediafire
+        run: |
+          page=$(curl -sL "${{ github.event.inputs.mediafire_url }}")
+          direct=$(echo "$page" | grep -o 'https://download[^"]*')
+          echo "direct_url=$direct" >> $GITHUB_OUTPUT
+
+      - name: Download boot.img
+        run: |
+          wget -O boot.img "${{ steps.mediafire.outputs.direct_url }}"
+
+      - name: Download Magisk APK
+        run: |
+          wget https://github.com/topjohnwu/Magisk/releases/download/v30.6/Magisk-v30.6.apk -O Magisk.apk
+
+      - name: Extract magiskboot
+        run: |
+          unzip -o Magisk.apk lib/x86_64/libmagiskboot.so
+          mv lib/x86_64/libmagiskboot.so magiskboot
+          chmod +x magiskboot
+
+      - name: Unpack boot.img
+        run: |
+          ./magiskboot unpack boot.img
+
+      - name: Smart Kernel Processing
+        run: |
+          mkdir -p output
+
+          echo "Checking kernel format..."
+          file kernel || true
+
+          if file kernel | grep -q "gzip compressed"; then
+            echo "Kernel already gzip"
+            mv kernel output/Image.gz
+          else
+            echo "Kernel is RAW, compressing..."
+            gzip -c kernel > output/Image.gz
+          fi
+
+          if [ -f kernel_dtb ]; then
+            echo "DTB found, creating Image.gz-dtb"
+            cat output/Image.gz kernel_dtb > output/Image.gz-dtb
+          fi
+
+          ls -lah output
+
+      - name: Extract Ramdisk
+        run: |
+          mkdir -p ramdisk_out
+
+          if [ -f ramdisk.cpio ]; then
+            echo "Extracting ramdisk.cpio..."
+            mkdir ramdisk
+            cd ramdisk
+            cpio -idmv < ../ramdisk.cpio
+            cd ..
+            mv ramdisk ramdisk_out/
+          else
+            echo "No ramdisk.cpio found!"
+          fi
+
+          ls -lah ramdisk_out
+
+      - name: Zip Ramdisk
+        run: |
+          zip -r ramdisk_full.zip ramdisk_out
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-and-ramdisk
+          path: |
+            output/
+            ramdisk_full.zip
