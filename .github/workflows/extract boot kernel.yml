@@ -1,4 +1,4 @@
-name: Extract Kernel From MediaFire
+name: Extract Kernel Smart (MediaFire)
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y wget curl unzip grep sed
+          sudo apt install -y wget curl unzip gzip file grep sed
 
       - name: Get Direct Download Link
         id: mediafire
@@ -32,25 +32,43 @@ jobs:
 
       - name: Download Magisk APK
         run: |
-          wget https://github.com/topjohnwu/Magisk/releases/download/v30.6/Magisk-v30.6.apk -O Magisk.apk
+          wget https://github.com/topjohnwu/Magisk/releases/latest/download/Magisk.apk -O Magisk.apk
 
       - name: Extract magiskboot
         run: |
-          unzip Magisk.apk lib/x86_64/libmagiskboot.so
+          unzip -o Magisk.apk lib/x86_64/libmagiskboot.so
           mv lib/x86_64/libmagiskboot.so magiskboot
           chmod +x magiskboot
 
       - name: Unpack boot.img
         run: |
-          mkdir output
           ./magiskboot unpack boot.img
-          mv kernel output/ 2>/dev/null || true
-          mv kernel.img output/ 2>/dev/null || true
-          mv Image.gz output/ 2>/dev/null || true
-          mv Image.gz-dtb output/ 2>/dev/null || true
+
+      - name: Smart Kernel Processing
+        run: |
+          mkdir output
+
+          echo "Checking kernel format..."
+          file kernel || true
+
+          if file kernel | grep -q "gzip compressed"; then
+            echo "Kernel already gzip"
+            mv kernel output/Image.gz
+
+          else
+            echo "Kernel is RAW, compressing..."
+            gzip -c kernel > output/Image.gz
+          fi
+
+          if [ -f kernel_dtb ]; then
+            echo "DTB found, creating Image.gz-dtb"
+            cat output/Image.gz kernel_dtb > output/Image.gz-dtb
+          fi
+
+          ls -lah output
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: extracted-kernel
+          name: kernel-ready
           path: output/
