@@ -10,54 +10,47 @@ on:
 jobs:
   extract:
     runs-on: ubuntu-latest
-    permissions:
-        contents: write
 
     steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y wget curl grep sed
+          sudo apt install -y wget curl unzip grep sed
 
       - name: Get Direct Download Link
         id: mediafire
         run: |
-          echo "Fetching MediaFire page..."
           page=$(curl -sL "${{ github.event.inputs.mediafire_url }}")
           direct=$(echo "$page" | grep -o 'https://download[^"]*')
-          echo "Direct link: $direct"
           echo "direct_url=$direct" >> $GITHUB_OUTPUT
 
       - name: Download boot.img
         run: |
           wget -O boot.img "${{ steps.mediafire.outputs.direct_url }}"
 
-      - name: Download magiskboot
+      - name: Download Magisk APK
         run: |
-          wget https://github.com/topjohnwu/Magisk/releases/latest/download/magiskboot
+          wget https://github.com/topjohnwu/Magisk/releases/latest/download/Magisk.apk -O Magisk.apk
+
+      - name: Extract magiskboot
+        run: |
+          unzip Magisk.apk lib/x86_64/libmagiskboot.so
+          mv lib/x86_64/libmagiskboot.so magiskboot
           chmod +x magiskboot
 
-      - name: Extract boot.img
+      - name: Unpack boot.img
         run: |
           mkdir output
           ./magiskboot unpack boot.img
-          mv kernel output/kernel || true
-          mv kernel.img output/kernel.img || true
+          mv kernel output/ 2>/dev/null || true
+          mv kernel.img output/ 2>/dev/null || true
+          mv Image.gz output/ 2>/dev/null || true
+          mv Image.gz-dtb output/ 2>/dev/null || true
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: extracted-kernel
           path: output/
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: kernel-${{ github.run_number }}
-          name: Extracted Kernel ${{ github.run_number }}
-          files: output/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
