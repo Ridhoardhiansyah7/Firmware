@@ -1,10 +1,10 @@
-name: Extract Kernel From boot.img
+name: Extract Kernel From MediaFire
 
 on:
   workflow_dispatch:
     inputs:
       mediafire_url:
-        description: "Direct MediaFire Download Link"
+        description: "MediaFire File Page URL"
         required: true
 
 jobs:
@@ -20,12 +20,20 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y wget curl p7zip-full unzip
+          sudo apt install -y wget curl grep sed
+
+      - name: Get Direct Download Link
+        id: mediafire
+        run: |
+          echo "Fetching MediaFire page..."
+          page=$(curl -sL "${{ github.event.inputs.mediafire_url }}")
+          direct=$(echo "$page" | grep -o 'https://download[^"]*')
+          echo "Direct link: $direct"
+          echo "direct_url=$direct" >> $GITHUB_OUTPUT
 
       - name: Download boot.img
         run: |
-          echo "Downloading boot.img..."
-          wget -O boot.img "${{ github.event.inputs.mediafire_url }}"
+          wget -O boot.img "${{ steps.mediafire.outputs.direct_url }}"
 
       - name: Download magiskboot
         run: |
@@ -36,8 +44,8 @@ jobs:
         run: |
           mkdir output
           ./magiskboot unpack boot.img
-          mv kernel output/kernel.img || true
           mv kernel output/kernel || true
+          mv kernel.img output/kernel.img || true
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
