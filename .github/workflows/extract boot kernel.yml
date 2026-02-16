@@ -32,7 +32,7 @@ jobs:
 
       - name: Download Magisk APK
         run: |
-          wget https://github.com/topjohnwu/Magisk/releases/latest/download/Magisk.apk -O Magisk.apk
+          wget https://github.com/topjohnwu/Magisk/releases/download/v30.6/Magisk-v30.6.apk -O Magisk.apk
 
       - name: Extract magiskboot
         run: |
