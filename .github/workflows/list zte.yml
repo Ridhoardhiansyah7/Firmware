@@ -1,0 +1,74 @@
+name: List OTA Files (zte)
+
+on:
+  workflow_dispatch:
+    inputs:
+      firmware_url:
+        description: "Google Drive File ID atau Link"
+        required: true
+
+jobs:
+  list_files:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y unzip python3-pip
+          pip install --upgrade pip
+          pip install gdown
+
+      - name: Download OTA from Google Drive
+        run: |
+          echo "Processing input..."
+
+          INPUT="${{ github.event.inputs.firmware_url }}"
+
+          # Extract file ID if full link is given
+          if [[ "$INPUT" == *"drive.google.com"* ]]; then
+            FILEID=$(echo "$INPUT" | sed -n 's/.*\/d\/\([^\/]*\).*/\1/p')
+            if [ -z "$FILEID" ]; then
+              FILEID=$(echo "$INPUT" | sed -n 's/.*id=\([^&]*\).*/\1/p')
+            fi
+          else
+            FILEID="$INPUT"
+          fi
+
+          echo "File ID: $FILEID"
+
+          echo "Downloading firmware..."
+          
+          # Retry 3x kalau gagal
+          for i in 1 2 3; do
+            gdown --id "$FILEID" -O firmware.zip && break
+            echo "Retry $i failed... retrying in 10 seconds"
+            sleep 10
+          done
+
+          if [ ! -f firmware.zip ]; then
+            echo "Download failed!"
+            exit 1
+          fi
+
+          echo "Download complete"
+
+      - name: Extract OTA
+        run: |
+          unzip -q firmware.zip -d firmware
+
+      - name: List All Files
+        run: |
+          echo "Listing files..."
+          find firmware -type f | sort > firmware_file_list.txt
+          cat firmware_file_list.txt
+
+      - name: Upload File List
+        uses: actions/upload-artifact@v4
+        with:
+          name: ota-file-list
+          path: firmware_file_list.txt
