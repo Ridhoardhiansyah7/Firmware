@@ -1,0 +1,53 @@
+name: Extract Kernel From boot.img
+
+on:
+  workflow_dispatch:
+    inputs:
+      mediafire_url:
+        description: "Direct MediaFire Download Link"
+        required: true
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y wget curl p7zip-full unzip
+
+      - name: Download boot.img
+        run: |
+          echo "Downloading boot.img..."
+          wget -O boot.img "${{ github.event.inputs.mediafire_url }}"
+
+      - name: Download magiskboot
+        run: |
+          wget https://github.com/topjohnwu/Magisk/releases/latest/download/magiskboot
+          chmod +x magiskboot
+
+      - name: Extract boot.img
+        run: |
+          mkdir output
+          ./magiskboot unpack boot.img
+          mv kernel output/kernel.img || true
+          mv kernel output/kernel || true
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: extracted-kernel
+          path: output/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: kernel-${{ github.run_number }}
+          name: Extracted Kernel ${{ github.run_number }}
+          files: output/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
