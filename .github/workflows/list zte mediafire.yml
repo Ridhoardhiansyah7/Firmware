@@ -1,10 +1,11 @@
-name: Nested Firmware Viewer
+
+name: Robust Nested Firmware Inspector
 
 on:
   workflow_dispatch:
     inputs:
       firmware_url:
-        description: "MediaFire page OR direct firmware link"
+        description: "MediaFire page OR direct archive link"
         required: true
 
 jobs:
@@ -19,12 +20,12 @@ jobs:
       - name: Install Tools
         run: |
           sudo apt update
-          sudo apt install -y p7zip-full unzip unrar aria2 curl file
+          sudo apt install -y p7zip-full aria2 curl file
 
       # =========================================
-      # Detect MediaFire or Direct Link
+      # Resolve MediaFire Direct Link
       # =========================================
-      - name: Get Direct Link
+      - name: Resolve Download Link
         id: link
         run: |
           URL="${{ github.event.inputs.firmware_url }}"
@@ -40,7 +41,7 @@ jobs:
           fi
 
       # =========================================
-      # Download Firmware
+      # Download Archive
       # =========================================
       - name: Download Firmware
         run: |
@@ -50,62 +51,51 @@ jobs:
       # Detect Archive Type
       # =========================================
       - name: Detect Archive Type
-        id: detect
         run: |
-          TYPE=$(file firmware.bin)
-          echo "Detected: $TYPE"
-
-          if echo "$TYPE" | grep -qi zip; then
-            echo "archive_type=zip" >> $GITHUB_OUTPUT
-          elif echo "$TYPE" | grep -qi rar; then
-            echo "archive_type=rar" >> $GITHUB_OUTPUT
-          elif echo "$TYPE" | grep -qi "7-zip"; then
-            echo "archive_type=7z" >> $GITHUB_OUTPUT
-          else
-            echo "Unsupported format"
-            exit 1
-          fi
+          echo "Detected file type:"
+          file firmware.bin
 
       # =========================================
       # List Level 1 Archive
       # =========================================
-      - name: List Level 1 Archive
+      - name: List Level 1 Content
         run: |
-          echo "===== LEVEL 1 CONTENT ====="
-          7z l firmware.bin | tee level1.txt
+          echo "========== LEVEL 1 CONTENT =========="
+          7z l firmware.bin
 
       # =========================================
-      # Extract update.zip ONLY (if exists)
+      # Extract Nested update.zip Safely
       # =========================================
-      - name: Extract update.zip (if exists)
+      - name: Extract Nested update.zip
         run: |
-          mkdir level2
+          mkdir -p level2
 
-          INNER=$(7z l firmware.bin | grep -i "update.zip" | awk '{print $6}' | head -n1)
+          INNER=$(7z l -slt firmware.bin | grep -i "Path = " | grep -i "update.zip" | sed 's/Path = //' | head -n1)
 
           if [ -n "$INNER" ]; then
-            echo "Found nested archive: $INNER"
+            echo "Found nested archive:"
+            echo "$INNER"
             7z e firmware.bin "$INNER" -olevel2
           else
-            echo "No update.zip found"
+            echo "No update.zip found inside archive"
           fi
 
       # =========================================
-      # List update.zip Content (No Extract)
+      # List Nested update.zip Content (No Extract)
       # =========================================
-      - name: List update.zip Content
+      - name: List Nested update.zip Content
         run: |
           if [ -f level2/update.zip ]; then
-            echo "===== LEVEL 2 (update.zip) CONTENT ====="
-            7z l level2/update.zip | tee level2.txt
+            echo "========== LEVEL 2 (update.zip) CONTENT =========="
+            7z l level2/update.zip
           else
             echo "No nested update.zip to inspect"
           fi
 
       # =========================================
-      # Cleanup to Save Disk
+      # Cleanup (optional but recommended)
       # =========================================
       - name: Cleanup
         run: |
           rm -rf level2
-          echo "Temporary files cleaned"
+          echo "Temporary files removed"
