@@ -1,18 +1,14 @@
-name: Universal Firmware Lister
+name: Nested Firmware Viewer
 
 on:
   workflow_dispatch:
     inputs:
       firmware_url:
-        description: "MediaFire page OR direct firmware link (.zip/.rar/.7z)"
+        description: "MediaFire page OR direct firmware link"
         required: true
-      extract_files:
-        description: "Extract files? (true/false)"
-        required: true
-        default: "false"
 
 jobs:
-  process:
+  inspect:
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
@@ -25,10 +21,10 @@ jobs:
           sudo apt update
           sudo apt install -y p7zip-full unzip unrar aria2 curl file
 
-      # =============================
-      # Detect if MediaFire page
-      # =============================
-      - name: Detect MediaFire Direct Link
+      # =========================================
+      # Detect MediaFire or Direct Link
+      # =========================================
+      - name: Get Direct Link
         id: link
         run: |
           URL="${{ github.event.inputs.firmware_url }}"
@@ -43,21 +39,21 @@ jobs:
             echo "direct_url=$URL" >> $GITHUB_OUTPUT
           fi
 
-      # =============================
-      # Download firmware
-      # =============================
+      # =========================================
+      # Download Firmware
+      # =========================================
       - name: Download Firmware
         run: |
           aria2c -x 16 -s 16 -k 1M "${{ steps.link.outputs.direct_url }}" -o firmware.bin
 
-      # =============================
-      # Detect archive type
-      # =============================
+      # =========================================
+      # Detect Archive Type
+      # =========================================
       - name: Detect Archive Type
         id: detect
         run: |
           TYPE=$(file firmware.bin)
-          echo "File type: $TYPE"
+          echo "Detected: $TYPE"
 
           if echo "$TYPE" | grep -qi zip; then
             echo "archive_type=zip" >> $GITHUB_OUTPUT
@@ -70,54 +66,46 @@ jobs:
             exit 1
           fi
 
-      # =============================
-      # List files inside archive
-      # =============================
-      - name: List Files Inside Archive
+      # =========================================
+      # List Level 1 Archive
+      # =========================================
+      - name: List Level 1 Archive
         run: |
-          mkdir output
+          echo "===== LEVEL 1 CONTENT ====="
+          7z l firmware.bin | tee level1.txt
 
-          if [ "${{ steps.detect.outputs.archive_type }}" = "zip" ]; then
-            unzip -l firmware.bin > output/firmware_file_list.txt
-          elif [ "${{ steps.detect.outputs.archive_type }}" = "rar" ]; then
-            7z l firmware.bin > output/firmware_file_list.txt
-          elif [ "${{ steps.detect.outputs.archive_type }}" = "7z" ]; then
-            7z l firmware.bin > output/firmware_file_list.txt
+      # =========================================
+      # Extract update.zip ONLY (if exists)
+      # =========================================
+      - name: Extract update.zip (if exists)
+        run: |
+          mkdir level2
+
+          INNER=$(7z l firmware.bin | grep -i "update.zip" | awk '{print $6}' | head -n1)
+
+          if [ -n "$INNER" ]; then
+            echo "Found nested archive: $INNER"
+            7z e firmware.bin "$INNER" -olevel2
+          else
+            echo "No update.zip found"
           fi
 
-          cat output/firmware_file_list.txt
-
-      # =============================
-      # Optional Extraction
-      # =============================
-      - name: Extract Archive (Optional)
-        if: ${{ github.event.inputs.extract_files == 'true' }}
+      # =========================================
+      # List update.zip Content (No Extract)
+      # =========================================
+      - name: List update.zip Content
         run: |
-          mkdir extracted
-
-          if [ "${{ steps.detect.outputs.archive_type }}" = "zip" ]; then
-            unzip firmware.bin -d extracted
-          elif [ "${{ steps.detect.outputs.archive_type }}" = "rar" ]; then
-            7z x firmware.bin -oextracted
-          elif [ "${{ steps.detect.outputs.archive_type }}" = "7z" ]; then
-            7z x firmware.bin -oextracted
+          if [ -f level2/update.zip ]; then
+            echo "===== LEVEL 2 (update.zip) CONTENT ====="
+            7z l level2/update.zip | tee level2.txt
+          else
+            echo "No nested update.zip to inspect"
           fi
 
-          echo "Extraction complete"
-          ls -lah extracted
-
-      # =============================
-      # Upload Results
-      # =============================
-      - name: Upload File List
-        uses: actions/upload-artifact@v4
-        with:
-          name: firmware-file-list
-          path: output/firmware_file_list.txt
-
-      - name: Upload Extracted Files
-        if: ${{ github.event.inputs.extract_files == 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: extracted-firmware
-          path: extracted/
+      # =========================================
+      # Cleanup to Save Disk
+      # =========================================
+      - name: Cleanup
+        run: |
+          rm -rf level2
+          echo "Temporary files cleaned"
