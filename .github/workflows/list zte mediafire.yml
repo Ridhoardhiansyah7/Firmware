@@ -26,7 +26,7 @@ jobs:
       - name: Install Tools
         run: |
           sudo apt update
-          sudo apt install -y p7zip-full aria2 curl file golang-go liblzma-dev zip
+          sudo apt install -y p7zip-full aria2 curl file golang-go liblzma-dev zip erofs-utils
 
       # =========================================
       # Resolve MediaFire Direct Link
@@ -129,14 +129,14 @@ jobs:
           file dumped/vendor.img
 
       # =========================================
-      # Mount vendor.img to /tmp folder and list contents
+      # Mount vendor.img to /tmp folder using erofs-utils
       # =========================================
-      - name: List contents of mounted vendor.img
+      - name: Mount vendor.img to /tmp and list contents
         run: |
           if [ -f "dumped/vendor.img" ]; then
             mkdir -p /tmp/mount
-            # Mount vendor.img to /tmp/mount with user access
-            sudo mount -o loop,uid=1000,gid=1000 dumped/vendor.img /tmp/mount
+            # Mount using erofs-utils, if supported
+            sudo mount -t erofs dumped/vendor.img /tmp/mount
             echo "Listing entire /tmp/mount content"
             ls -lh /tmp/mount
             echo "Listing contents of /tmp/mount/bin/"
