@@ -131,12 +131,15 @@ jobs:
       # =========================================
       # Mount vendor.img and list files
       # =========================================
-      - name: Mount vendor.img and list files
+      - name: List contents of mounted vendor.img
         run: |
           if [ -f "dumped/vendor.img" ]; then
             mkdir -p /mnt
             sudo mount -o loop dumped/vendor.img /mnt
-            ls -lh /mnt/vendor/bin/hw
+            echo "Listing contents of /mnt/vendor/"
+            ls -lh /mnt/vendor/
+            echo "Listing contents of /mnt/"
+            ls -lh /mnt/
             sudo umount /mnt
           else
             echo "No vendor.img found in dumped folder"
