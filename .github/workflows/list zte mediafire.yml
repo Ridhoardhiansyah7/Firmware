@@ -122,6 +122,33 @@ jobs:
           ls -lh dumped
 
       # =========================================
+      # Extract vendor folder from dumped folder
+      # =========================================
+      - name: Extract vendor folder from dumped
+        run: |
+          # Periksa apakah file vendor.img ada di folder dumped
+          if [ -f "dumped/vendor.img" ]; then
+            mkdir -p vendor_folder
+            7z x dumped/vendor.img -o vendor_folder vendor/*
+            ls -lh vendor_folder
+          else
+            echo "No vendor.img found in dumped folder"
+          fi
+
+      # =========================================
+      # Masuk ke bin/hw dan print file yang ada
+      # =========================================
+      - name: List files in vendor/bin/hw
+        run: |
+          # Cek apakah folder bin/hw ada
+          if [ -d "vendor_folder/vendor/bin/hw" ]; then
+            echo "Listing files in vendor_folder/vendor/bin/hw:"
+            ls -lh vendor_folder/vendor/bin/hw
+          else
+            echo "No bin/hw directory found in vendor."
+          fi
+
+      # =========================================
       # Upload Selected Partitions
       # =========================================
       - name: Upload Selected Partitions
@@ -134,26 +161,3 @@ jobs:
             dumped/uboot.img
             dumped/system.img
             dumped/vendor.img
-
-      # =========================================
-      # Ekstrak folder vendor
-      # =========================================
-      - name: Extract vendor folder
-        run: |
-          # Tentukan lokasi vendor dalam filesystem
-          mkdir -p vendor_folder
-          7z x level2/update.zip -ovendor_folder vendor/*
-          ls -lh vendor_folder
-
-      # =========================================
-      # Masuk ke bin/hw dan print file yang ada
-      # =========================================
-      - name: List files in bin/hw
-        run: |
-          # Cek apakah folder bin/hw ada
-          if [ -d "vendor_folder/vendor/bin/hw" ]; then
-            echo "Listing files in vendor_folder/vendor/bin/hw:"
-            ls -lh vendor_folder/vendor/bin/hw
-          else
-            echo "No bin/hw directory found in vendor."
-          fi
