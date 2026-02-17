@@ -26,7 +26,10 @@ jobs:
       - name: Install Tools
         run: |
           sudo apt update
-          sudo apt install -y p7zip-full aria2 curl file golang-go liblzma-dev zip erofs-utils
+          sudo apt install -y p7zip-full aria2 curl file golang-go liblzma-dev zip erofs-utils git
+          git clone https://github.com/LeoHassan/ero2ext.git
+          cd ero2ext
+          make
 
       # =========================================
       # Resolve MediaFire Direct Link
@@ -122,48 +125,31 @@ jobs:
           ls -lh dumped
 
       # =========================================
-      # Check file type of vendor.img
+      # Convert EROFS to EXT4 using ero2ext
       # =========================================
-      - name: Check file type of vendor.img
+      - name: Convert vendor.img from EROFS to EXT4
         run: |
-          file dumped/vendor.img
-
-      # =========================================
-      # Mount vendor.img to /tmp folder using erofs-utils
-      # =========================================
-      - name: Mount vendor.img to /tmp and list contents
-        run: |
-          if [ -f "dumped/vendor.img" ]; then
-            mkdir -p /tmp/mount
-            # Mount using erofs-utils, if supported
-            sudo mount -t erofs dumped/vendor.img /tmp/mount
-            echo "Listing entire /tmp/mount content"
-            ls -lh /tmp/mount
-            echo "Listing contents of /tmp/mount/bin/"
-            ls -lh /tmp/mount/bin/
-            echo "Listing contents of /tmp/mount/firmware/"
-            ls -lh /tmp/mount/firmware/
-            sudo umount /tmp/mount
-          else
-            echo "No vendor.img found in dumped folder"
-          fi
+          mkdir -p /tmp/vendor_ext4
+          # Convert EROFS vendor.img to EXT4
+          ./ero2ext/ero2ext dumped/vendor.img /tmp/vendor_ext4
+          ls -lh /tmp/vendor_ext4
 
       # =========================================
       # Create zip of specific folders (bin, etc, lib64, lib)
       # =========================================
       - name: Create zip of bin, etc, lib64, and lib folders
         run: |
-          if [ -d "/tmp/mount/bin" ]; then
-            zip -r /tmp/mount/bin.zip /tmp/mount/bin
+          if [ -d "/tmp/vendor_ext4/bin" ]; then
+            zip -r /tmp/vendor_ext4/bin.zip /tmp/vendor_ext4/bin
           fi
-          if [ -d "/tmp/mount/etc" ]; then
-            zip -r /tmp/mount/etc.zip /tmp/mount/etc
+          if [ -d "/tmp/vendor_ext4/etc" ]; then
+            zip -r /tmp/vendor_ext4/etc.zip /tmp/vendor_ext4/etc
           fi
-          if [ -d "/tmp/mount/lib64" ]; then
-            zip -r /tmp/mount/lib64.zip /tmp/mount/lib64
+          if [ -d "/tmp/vendor_ext4/lib64" ]; then
+            zip -r /tmp/vendor_ext4/lib64.zip /tmp/vendor_ext4/lib64
           fi
-          if [ -d "/tmp/mount/lib" ]; then
-            zip -r /tmp/mount/lib.zip /tmp/mount/lib
+          if [ -d "/tmp/vendor_ext4/lib" ]; then
+            zip -r /tmp/vendor_ext4/lib.zip /tmp/vendor_ext4/lib
           fi
 
       # =========================================
@@ -174,7 +160,7 @@ jobs:
         with:
           name: vendor-folders
           path: |
-            /tmp/mount/bin.zip
-            /tmp/mount/etc.zip
-            /tmp/mount/lib64.zip
-            /tmp/mount/lib.zip
+            /tmp/vendor_ext4/bin.zip
+            /tmp/vendor_ext4/etc.zip
+            /tmp/vendor_ext4/lib64.zip
+            /tmp/vendor_ext4/lib.zip
