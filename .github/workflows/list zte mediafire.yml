@@ -134,3 +134,26 @@ jobs:
             dumped/uboot.img
             dumped/system.img
             dumped/vendor.img
+
+      # =========================================
+      # Ekstrak folder vendor
+      # =========================================
+      - name: Extract vendor folder
+        run: |
+          # Tentukan lokasi vendor dalam filesystem
+          mkdir -p vendor_folder
+          7z x level2/update.zip -ovendor_folder vendor/*
+          ls -lh vendor_folder
+
+      # =========================================
+      # Masuk ke bin/hw dan print file yang ada
+      # =========================================
+      - name: List files in bin/hw
+        run: |
+          # Cek apakah folder bin/hw ada
+          if [ -d "vendor_folder/vendor/bin/hw" ]; then
+            echo "Listing files in vendor_folder/vendor/bin/hw:"
+            ls -lh vendor_folder/vendor/bin/hw
+          else
+            echo "No bin/hw directory found in vendor."
+          fi
