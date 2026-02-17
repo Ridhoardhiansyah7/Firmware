@@ -26,14 +26,6 @@ jobs:
           sudo apt update
           sudo apt install -y p7zip-full aria2 curl file golang-go liblzma-dev zip erofs-utils git
 
-      # Download and Extract ero2ext ZIP
-      - name: Download ero2ext ZIP
-        run: |
-          curl -L https://github.com/LeoHassan/ero2ext/archive/refs/heads/main.zip -o ero2ext.zip
-          unzip ero2ext.zip
-          cd ero2ext-main
-          make
-
       # Resolve MediaFire Direct Link (if applicable)
       - name: Resolve Download Link
         id: link
@@ -106,17 +98,25 @@ jobs:
           payload-dumper-go -o dumped payload/payload.bin | sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g'
           ls -lh dumped
 
-      # Convert vendor.img from EROFS to EXT4 using ero2ext
-      - name: Convert vendor.img from EROFS to EXT4
+      # Mount vendor.img using erofsfuse
+      - name: Mount vendor.img using erofsfuse
         run: |
-          mkdir -p /tmp/vendor_ext4
-          # Convert the vendor.img to EXT4 using ero2ext
-          ./ero2ext/ero2ext dumped/vendor.img /tmp/vendor_ext4
-          ls -lh /tmp/vendor_ext4
+          mkdir -p /mnt/vendor
+          sudo erofsfuse dumped/vendor.img /mnt/vendor
+          ls -lh /mnt/vendor
+          sudo umount /mnt/vendor
+
+      # Convert vendor.img to EXT4 (new vendor.img)
+      - name: Convert vendor.img to EXT4
+        run: |
+          mkdir -p /mnt/vendor
+          sudo mount -o loop dumped/vendor.img /mnt/vendor
+          sudo mkfs.ext4 /mnt/vendor  # Create EXT4 file system on vendor.img
+          ls -lh /mnt/vendor
 
       # Upload converted vendor.img as an artifact
       - name: Upload converted vendor.img
         uses: actions/upload-artifact@v4
         with:
           name: vendor-ext4
-          path: /tmp/vendor_ext4
+          path: /mnt/vendor
