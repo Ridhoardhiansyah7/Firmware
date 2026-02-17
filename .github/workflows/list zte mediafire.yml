@@ -138,8 +138,10 @@ jobs:
             sudo mount -o loop dumped/vendor.img /mnt
             echo "Listing entire /mnt content"
             ls -lh /mnt
-            echo "Listing contents of /mnt/vendor/"
-            ls -lh /mnt/vendor/
+            echo "Listing contents of /mnt/bin/"
+            ls -lh /mnt/bin/
+            echo "Listing contents of /mnt/firmware/"
+            ls -lh /mnt/firmware/
             sudo umount /mnt
           else
             echo "No vendor.img found in dumped folder"
