@@ -129,7 +129,7 @@ jobs:
           # Periksa apakah file vendor.img ada di folder dumped
           if [ -f "dumped/vendor.img" ]; then
             mkdir -p vendor_folder
-            7z x dumped/vendor.img -o vendor_folder vendor/*
+            7z x dumped/vendor.img -ovendor_folder vendor/*
             ls -lh vendor_folder
           else
             echo "No vendor.img found in dumped folder"
