@@ -1,10 +1,10 @@
-name: OTA Payload Inspector + Selective Upload
+name: Convert EROFS to EXT4 and Release
 
 on:
   workflow_dispatch:
     inputs:
       firmware_url:
-        description: "MediaFire page OR direct archive link"
+        description: "Direct URL to the firmware (e.g., from MediaFire or other links)"
         required: true
       full_dump:
         description: "Dump full payload images? (true/false)"
@@ -12,28 +12,29 @@ on:
         default: "false"
 
 jobs:
-  inspect:
+  convert_and_release:
     runs-on: ubuntu-latest
     timeout-minutes: 240
 
     steps:
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # =========================================
-      # Install Tools
-      # =========================================
-      - name: Install Tools
+      # Install Dependencies
+      - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y p7zip-full aria2 curl file golang-go liblzma-dev zip erofs-utils git
-          git clone https://github.com/LeoHassan/ero2ext.git
-          cd ero2ext
+
+      # Download and Extract ero2ext ZIP
+      - name: Download ero2ext ZIP
+        run: |
+          curl -L https://github.com/LeoHassan/ero2ext/archive/refs/heads/main.zip -o ero2ext.zip
+          unzip ero2ext.zip
+          cd ero2ext-main
           make
 
-      # =========================================
-      # Resolve MediaFire Direct Link
-      # =========================================
+      # Resolve MediaFire Direct Link (if applicable)
       - name: Resolve Download Link
         id: link
         run: |
@@ -46,28 +47,20 @@ jobs:
             echo "direct_url=$URL" >> $GITHUB_OUTPUT
           fi
 
-      # =========================================
-      # Download Firmware
-      # =========================================
+      # Download Firmware from URL
       - name: Download Firmware
         run: |
           aria2c -x 16 -s 16 -k 1M "${{ steps.link.outputs.direct_url }}" -o firmware.bin
 
-      # =========================================
       # Detect Archive Type
-      # =========================================
       - name: Detect Archive Type
         run: file firmware.bin
 
-      # =========================================
-      # List Level 1 Content
-      # =========================================
+      # List Content of Level 1 Archive
       - name: List Level 1 Archive
         run: 7z l firmware.bin
 
-      # =========================================
-      # Extract Nested update.zip
-      # =========================================
+      # Extract Nested update.zip if exists
       - name: Extract update.zip
         run: |
           mkdir -p level2
@@ -79,9 +72,7 @@ jobs:
             echo "No update.zip found inside archive"
           fi
 
-      # =========================================
-      # List update.zip Content
-      # =========================================
+      # List Content of update.zip
       - name: List update.zip Content
         run: |
           if [ -f level2/update.zip ]; then
@@ -90,77 +81,42 @@ jobs:
             echo "No nested update.zip to inspect"
           fi
 
-      # =========================================
-      # Extract payload.bin + payload_properties.txt only
-      # =========================================
+      # Extract payload.bin and payload_properties.txt
       - name: Extract payload.bin
         run: |
           mkdir -p payload
           7z e level2/update.zip payload.bin payload_properties.txt -opayload
           ls -lh payload
 
-      # =========================================
       # Install payload-dumper-go
-      # =========================================
       - name: Install payload-dumper-go
         run: |
           go install github.com/ssut/payload-dumper-go@latest
           echo "$HOME/go/bin" >> $GITHUB_PATH
 
-      # =========================================
       # List partitions inside payload.bin (no full extract)
-      # =========================================
       - name: List payload partitions
         run: payload-dumper-go -l payload/payload.bin
 
-      # =========================================
-      # Optional Full Dump (log bersih)
-      # =========================================
+      # Full Dump (Optional)
       - name: Full payload dump
         if: ${{ github.event.inputs.full_dump == 'true' }}
         run: |
           mkdir -p dumped
-          # suppress ANSI escape codes untuk log bersih
           payload-dumper-go -o dumped payload/payload.bin | sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g'
           ls -lh dumped
 
-      # =========================================
-      # Convert EROFS to EXT4 using ero2ext
-      # =========================================
+      # Convert vendor.img from EROFS to EXT4 using ero2ext
       - name: Convert vendor.img from EROFS to EXT4
         run: |
           mkdir -p /tmp/vendor_ext4
-          # Convert EROFS vendor.img to EXT4
+          # Convert the vendor.img to EXT4 using ero2ext
           ./ero2ext/ero2ext dumped/vendor.img /tmp/vendor_ext4
           ls -lh /tmp/vendor_ext4
 
-      # =========================================
-      # Create zip of specific folders (bin, etc, lib64, lib)
-      # =========================================
-      - name: Create zip of bin, etc, lib64, and lib folders
-        run: |
-          if [ -d "/tmp/vendor_ext4/bin" ]; then
-            zip -r /tmp/vendor_ext4/bin.zip /tmp/vendor_ext4/bin
-          fi
-          if [ -d "/tmp/vendor_ext4/etc" ]; then
-            zip -r /tmp/vendor_ext4/etc.zip /tmp/vendor_ext4/etc
-          fi
-          if [ -d "/tmp/vendor_ext4/lib64" ]; then
-            zip -r /tmp/vendor_ext4/lib64.zip /tmp/vendor_ext4/lib64
-          fi
-          if [ -d "/tmp/vendor_ext4/lib" ]; then
-            zip -r /tmp/vendor_ext4/lib.zip /tmp/vendor_ext4/lib
-          fi
-
-      # =========================================
-      # Upload zip files as artifacts
-      # =========================================
-      - name: Upload zip files as artifacts
+      # Upload converted vendor.img as an artifact
+      - name: Upload converted vendor.img
         uses: actions/upload-artifact@v4
         with:
-          name: vendor-folders
-          path: |
-            /tmp/vendor_ext4/bin.zip
-            /tmp/vendor_ext4/etc.zip
-            /tmp/vendor_ext4/lib64.zip
-            /tmp/vendor_ext4/lib.zip
+          name: vendor-ext4
+          path: /tmp/vendor_ext4
