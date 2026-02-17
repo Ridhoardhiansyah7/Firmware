@@ -1,4 +1,4 @@
-name: OTA Payload Inspector + Vendor Analyzer
+name: OTA Payload Inspector + Vendor EXT4 Converter
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ on:
       full_dump:
         description: "Dump full payload images? (true/false)"
         required: true
-        default: "false"
+        default: "true"
 
 jobs:
   inspect:
@@ -26,7 +26,10 @@ jobs:
       - name: Install Tools
         run: |
           sudo apt update
-          sudo apt install -y p7zip-full aria2 curl file golang-go liblzma-dev zip erofs-utils git e2fsprogs
+          sudo apt install -y \
+            p7zip-full aria2 curl file golang-go \
+            liblzma-dev zip erofs-utils git \
+            e2fsprogs android-sdk-libsparse-utils
 
       # =========================================
       # Resolve MediaFire Direct Link
@@ -51,23 +54,13 @@ jobs:
           aria2c -x 16 -s 16 -k 1M "${{ steps.link.outputs.direct_url }}" -o firmware.bin
 
       # =========================================
-      # List Level 1 Archive
-      # =========================================
-      - name: List Level 1 Archive
-        run: 7z l firmware.bin
-
-      # =========================================
       # Extract update.zip
       # =========================================
       - name: Extract update.zip
         run: |
           mkdir -p level2
           INNER=$(7z l -slt firmware.bin | grep -i "Path = " | grep -i "update.zip" | sed 's/Path = //' | head -n1)
-          if [ -n "$INNER" ]; then
-            7z e firmware.bin "$INNER" -olevel2
-          else
-            echo "No update.zip found"
-          fi
+          7z e firmware.bin "$INNER" -olevel2
 
       # =========================================
       # Extract payload.bin
@@ -76,7 +69,6 @@ jobs:
         run: |
           mkdir -p payload
           7z e level2/update.zip payload.bin payload_properties.txt -opayload
-          ls -lh payload
 
       # =========================================
       # Install payload-dumper-go
@@ -87,15 +79,9 @@ jobs:
           echo "$HOME/go/bin" >> $GITHUB_PATH
 
       # =========================================
-      # List partitions
+      # Dump partitions
       # =========================================
-      - name: List payload partitions
-        run: payload-dumper-go -l payload/payload.bin
-
-      # =========================================
-      # Full payload dump (optional)
-      # =========================================
-      - name: Full payload dump
+      - name: Dump payload partitions
         if: ${{ github.event.inputs.full_dump == 'true' }}
         run: |
           mkdir -p dumped
@@ -103,55 +89,63 @@ jobs:
           ls -lh dumped
 
       # =========================================
-      # Inspect vendor image
+      # Convert vendor.img (EROFS -> EXT4)
       # =========================================
-      - name: Analyze vendor image
+      - name: Convert vendor to EXT4
         if: ${{ github.event.inputs.full_dump == 'true' }}
         run: |
-          mkdir -p vendor_mount vendor_extract
+          mkdir -p vendor_extract
 
-          echo "Filesystem detection:"
-          file dumped/vendor.img
+          echo "Detect filesystem:"
+          FSINFO=$(file dumped/vendor.img)
+          echo "$FSINFO"
 
-          echo "Attempting mount..."
+          if echo "$FSINFO" | grep -qi "erofs"; then
+            echo "EROFS detected. Extracting..."
 
-          sudo mount -t erofs dumped/vendor.img vendor_mount 2>/dev/null || \
-          sudo mount -t ext4 -o loop dumped/vendor.img vendor_mount || echo "Mount failed"
+            fsck.erofs --extract=vendor_extract dumped/vendor.img
 
-          if mount | grep -q vendor_mount; then
-            BASE="vendor_mount"
+            echo "Calculating required size..."
+            SIZE=$(du -sb vendor_extract | cut -f1)
+            FINAL_SIZE=$((SIZE + 300*1024*1024))
+
+            echo "Creating EXT4 image..."
+            dd if=/dev/zero of=vendor_ext4.img bs=1 count=0 seek=$FINAL_SIZE
+            mkfs.ext4 -F vendor_ext4.img
+
+            mkdir -p ext_mount
+            sudo mount -o loop vendor_ext4.img ext_mount
+
+            echo "Copying files..."
+            sudo cp -a vendor_extract/* ext_mount/
+
+            sudo umount ext_mount
+
           else
-            echo "Mount failed, extracting via erofs..."
-            fsck.erofs --extract=vendor_extract dumped/vendor.img || true
-            BASE="vendor_extract"
+            echo "Already EXT filesystem, copying..."
+            cp dumped/vendor.img vendor_ext4.img
           fi
 
-          echo "===== vendor/bin/hw ====="
-          ls -lah $BASE/bin/hw || echo "Not found"
-
-          echo "===== vendor/lib64 ====="
-          ls -lah $BASE/lib64 || echo "Not found"
-
-          echo "===== vendor/lib ====="
-          ls -lah $BASE/lib || echo "Not found"
-
-          echo "===== Searching .so files ====="
-          find $BASE -type f -name "*.so" | head -n 100
-
-          echo "===== HAL files ====="
-          find $BASE/bin/hw -type f 2>/dev/null || true
-
-          sudo umount vendor_mount 2>/dev/null || true
+          echo "Final EXT4 image:"
+          ls -lh vendor_ext4.img
 
       # =========================================
-      # Upload selected artifacts
+      # Convert to Sparse (Android format)
       # =========================================
-      - name: Upload vendor analysis
+      - name: Create sparse image
+        if: ${{ github.event.inputs.full_dump == 'true' }}
+        run: |
+          img2simg vendor_ext4.img vendor_ext4_sparse.img || true
+          ls -lh vendor_ext4_sparse.img || true
+
+      # =========================================
+      # Upload artifacts
+      # =========================================
+      - name: Upload EXT4 vendor
         if: ${{ github.event.inputs.full_dump == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: vendor-analysis
+          name: vendor-ext4
           path: |
-            dumped/vendor.img
-            vendor_mount
-            vendor_extract
+            vendor_ext4.img
+            vendor_ext4_sparse.img
