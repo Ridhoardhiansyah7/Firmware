@@ -1,10 +1,10 @@
-name: Convert EROFS to EXT4 and Release
+name: OTA Payload Inspector + Selective Upload
 
 on:
   workflow_dispatch:
     inputs:
       firmware_url:
-        description: "Direct URL to the firmware (e.g., from MediaFire or other links)"
+        description: "MediaFire page OR direct archive link"
         required: true
       full_dump:
         description: "Dump full payload images? (true/false)"
@@ -12,21 +12,25 @@ on:
         default: "false"
 
 jobs:
-  convert_and_release:
+  inspect:
     runs-on: ubuntu-latest
     timeout-minutes: 240
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # Install Dependencies
-      - name: Install dependencies
+      # =========================================
+      # Install Tools
+      # =========================================
+      - name: Install Tools
         run: |
           sudo apt update
           sudo apt install -y p7zip-full aria2 curl file golang-go liblzma-dev zip erofs-utils git
 
-      # Resolve MediaFire Direct Link (if applicable)
+      # =========================================
+      # Resolve MediaFire Direct Link
+      # =========================================
       - name: Resolve Download Link
         id: link
         run: |
@@ -39,20 +43,28 @@ jobs:
             echo "direct_url=$URL" >> $GITHUB_OUTPUT
           fi
 
-      # Download Firmware from URL
+      # =========================================
+      # Download Firmware
+      # =========================================
       - name: Download Firmware
         run: |
           aria2c -x 16 -s 16 -k 1M "${{ steps.link.outputs.direct_url }}" -o firmware.bin
 
+      # =========================================
       # Detect Archive Type
+      # =========================================
       - name: Detect Archive Type
         run: file firmware.bin
 
-      # List Content of Level 1 Archive
+      # =========================================
+      # List Level 1 Content
+      # =========================================
       - name: List Level 1 Archive
         run: 7z l firmware.bin
 
-      # Extract Nested update.zip if exists
+      # =========================================
+      # Extract Nested update.zip
+      # =========================================
       - name: Extract update.zip
         run: |
           mkdir -p level2
@@ -64,7 +76,9 @@ jobs:
             echo "No update.zip found inside archive"
           fi
 
-      # List Content of update.zip
+      # =========================================
+      # List update.zip Content
+      # =========================================
       - name: List update.zip Content
         run: |
           if [ -f level2/update.zip ]; then
@@ -73,50 +87,95 @@ jobs:
             echo "No nested update.zip to inspect"
           fi
 
-      # Extract payload.bin and payload_properties.txt
+      # =========================================
+      # Extract payload.bin + payload_properties.txt only
+      # =========================================
       - name: Extract payload.bin
         run: |
           mkdir -p payload
           7z e level2/update.zip payload.bin payload_properties.txt -opayload
           ls -lh payload
 
+      # =========================================
       # Install payload-dumper-go
+      # =========================================
       - name: Install payload-dumper-go
         run: |
           go install github.com/ssut/payload-dumper-go@latest
           echo "$HOME/go/bin" >> $GITHUB_PATH
 
+      # =========================================
       # List partitions inside payload.bin (no full extract)
+      # =========================================
       - name: List payload partitions
         run: payload-dumper-go -l payload/payload.bin
 
-      # Full Dump (Optional)
+      # =========================================
+      # Optional Full Dump (log bersih)
+      # =========================================
       - name: Full payload dump
         if: ${{ github.event.inputs.full_dump == 'true' }}
         run: |
           mkdir -p dumped
+          # suppress ANSI escape codes untuk log bersih
           payload-dumper-go -o dumped payload/payload.bin | sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g'
           ls -lh dumped
 
-      # Mount vendor.img using erofsfuse
-      - name: Mount vendor.img using erofsfuse
-        run: |
-          mkdir -p /mnt/vendor
-          sudo erofsfuse dumped/vendor.img /mnt/vendor
-          ls -lh /mnt/vendor
-          sudo umount /mnt/vendor
-
-      # Convert vendor.img to EXT4 (new vendor.img)
-      - name: Convert vendor.img to EXT4
-        run: |
-          mkdir -p /mnt/vendor
-          sudo mount -o loop dumped/vendor.img /mnt/vendor
-          sudo mkfs.ext4 /mnt/vendor  # Create EXT4 file system on vendor.img
-          ls -lh /mnt/vendor
-
-      # Upload converted vendor.img as an artifact
-      - name: Upload converted vendor.img
+      # =========================================
+      # Upload Selected Partitions
+      # =========================================
+      - name: Upload Selected Partitions
+        if: ${{ github.event.inputs.full_dump == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: vendor-ext4
-          path: /mnt/vendor
+          name: selected-partitions
+          path: |
+            dumped/boot.img
+            dumped/uboot.img
+            dumped/system.img
+            dumped/vendor.img
+
+      # =========================================
+      # Mount vendor.img and copy data to ext4
+      # =========================================
+      - name: Convert vendor.img to ext4
+        if: ${{ github.event.inputs.full_dump == 'true' }}
+        run: |
+          if [ -f "dumped/vendor.img" ]; then
+            # Mount vendor.img menggunakan erofs-utils
+            mkdir -p /tmp/mount
+            sudo erofsfuse dumped/vendor.img /tmp/mount
+            
+            # Create an empty ext4 image (10GB)
+            dd if=/dev/zero of=/tmp/vendor.ext4 bs=1M count=10240
+            sudo mkfs.ext4 /tmp/vendor.ext4
+            
+            # Mount ext4 image
+            mkdir -p /tmp/vendor_mount
+            sudo mount /tmp/vendor.ext4 /tmp/vendor_mount
+
+            # Copy data from mounted vendor.img (EROFS) to ext4 image
+            sudo cp -r /tmp/mount/* /tmp/vendor_mount/
+
+            # Unmount the ext4 image
+            sudo umount /tmp/vendor_mount
+            sudo umount /tmp/mount
+
+            # Verify ext4 image size and contents
+            ls -lh /tmp/vendor.ext4
+
+            # Move to current directory
+            mv /tmp/vendor.ext4 ./vendor.ext4
+          else
+            echo "No vendor.img found in dumped folder"
+          fi
+
+      # =========================================
+      # Upload Converted EXT4 vendor.img
+      # =========================================
+      - name: Upload Converted EXT4 vendor.img
+        if: ${{ github.event.inputs.full_dump == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: converted-vendor
+          path: ./vendor.ext4
