@@ -148,4 +148,3 @@ jobs:
           name: vendor-ext4
           path: |
             vendor_ext4.img
-            vendor_ext4_sparse.img
