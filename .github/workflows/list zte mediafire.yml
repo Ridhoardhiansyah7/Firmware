@@ -1,5 +1,4 @@
-
-name: Robust Nested Firmware Inspector
+name: OTA Payload Inspector
 
 on:
   workflow_dispatch:
@@ -7,11 +6,15 @@ on:
       firmware_url:
         description: "MediaFire page OR direct archive link"
         required: true
+      full_dump:
+        description: "Dump full payload images? (true/false)"
+        required: true
+        default: "false"
 
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 240
 
     steps:
       - name: Checkout
@@ -20,7 +23,7 @@ jobs:
       - name: Install Tools
         run: |
           sudo apt update
-          sudo apt install -y p7zip-full aria2 curl file
+          sudo apt install -y p7zip-full aria2 curl file golang-go
 
       # =========================================
       # Resolve MediaFire Direct Link
@@ -29,14 +32,11 @@ jobs:
         id: link
         run: |
           URL="${{ github.event.inputs.firmware_url }}"
-
           if echo "$URL" | grep -q "mediafire.com/file"; then
-            echo "MediaFire page detected"
             page=$(curl -sL "$URL")
             direct=$(echo "$page" | grep -o 'https://download[^"]*')
             echo "direct_url=$direct" >> $GITHUB_OUTPUT
           else
-            echo "Direct link detected"
             echo "direct_url=$URL" >> $GITHUB_OUTPUT
           fi
 
@@ -51,51 +51,75 @@ jobs:
       # Detect Archive Type
       # =========================================
       - name: Detect Archive Type
-        run: |
-          echo "Detected file type:"
-          file firmware.bin
+        run: file firmware.bin
 
       # =========================================
-      # List Level 1 Archive
+      # List Level 1 Content
       # =========================================
-      - name: List Level 1 Content
-        run: |
-          echo "========== LEVEL 1 CONTENT =========="
-          7z l firmware.bin
+      - name: List Level 1 Archive
+        run: 7z l firmware.bin
 
       # =========================================
-      # Extract Nested update.zip Safely
+      # Extract Nested update.zip
       # =========================================
-      - name: Extract Nested update.zip
+      - name: Extract update.zip
         run: |
           mkdir -p level2
-
           INNER=$(7z l -slt firmware.bin | grep -i "Path = " | grep -i "update.zip" | sed 's/Path = //' | head -n1)
-
           if [ -n "$INNER" ]; then
-            echo "Found nested archive:"
-            echo "$INNER"
+            echo "Found nested archive: $INNER"
             7z e firmware.bin "$INNER" -olevel2
           else
             echo "No update.zip found inside archive"
           fi
 
       # =========================================
-      # List Nested update.zip Content (No Extract)
+      # List update.zip Content
       # =========================================
-      - name: List Nested update.zip Content
+      - name: List update.zip Content
         run: |
           if [ -f level2/update.zip ]; then
-            echo "========== LEVEL 2 (update.zip) CONTENT =========="
             7z l level2/update.zip
           else
             echo "No nested update.zip to inspect"
           fi
 
       # =========================================
-      # Cleanup (optional but recommended)
+      # Extract payload.bin + payload_properties.txt only
+      # =========================================
+      - name: Extract payload.bin
+        run: |
+          mkdir -p payload
+          7z e level2/update.zip payload.bin payload_properties.txt -opayload
+          ls -lh payload
+
+      # =========================================
+      # Install payload-dumper-go
+      # =========================================
+      - name: Install payload-dumper-go
+        run: |
+          go install github.com/ssut/payload-dumper-go@latest
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+
+      # =========================================
+      # List partitions inside payload.bin (no full extract)
+      # =========================================
+      - name: List payload partitions
+        run: |
+          payload-dumper-go -l payload/payload.bin
+
+      # =========================================
+      # Optional Full Dump
+      # =========================================
+      - name: Full payload dump (optional)
+        if: ${{ github.event.inputs.full_dump == 'true' }}
+        run: |
+          mkdir -p dumped
+          payload-dumper-go -o dumped payload/payload.bin
+          ls -lh dumped
+
+      # =========================================
+      # Cleanup
       # =========================================
       - name: Cleanup
-        run: |
-          rm -rf level2
-          echo "Temporary files removed"
+        run: rm -rf level2 payload dumped || true
