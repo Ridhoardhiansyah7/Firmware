@@ -26,7 +26,7 @@ jobs:
       - name: Install Tools
         run: |
           sudo apt update
-          sudo apt install -y p7zip-full aria2 curl file golang-go liblzma-dev
+          sudo apt install -y p7zip-full aria2 curl file golang-go liblzma-dev zip
 
       # =========================================
       # Resolve MediaFire Direct Link
@@ -148,15 +148,32 @@ jobs:
           fi
 
       # =========================================
-      # Upload Selected Partitions
+      # Create zip of specific folders (bin, etc, lib64, lib)
       # =========================================
-      - name: Upload Selected Partitions
-        if: ${{ github.event.inputs.full_dump == 'true' }}
+      - name: Create zip of bin, etc, lib64, and lib folders
+        run: |
+          if [ -d "/mnt/bin" ]; then
+            zip -r /mnt/bin.zip /mnt/bin
+          fi
+          if [ -d "/mnt/etc" ]; then
+            zip -r /mnt/etc.zip /mnt/etc
+          fi
+          if [ -d "/mnt/lib64" ]; then
+            zip -r /mnt/lib64.zip /mnt/lib64
+          fi
+          if [ -d "/mnt/lib" ]; then
+            zip -r /mnt/lib.zip /mnt/lib
+          fi
+
+      # =========================================
+      # Upload zip files as artifacts
+      # =========================================
+      - name: Upload zip files as artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: selected-partitions
+          name: vendor-folders
           path: |
-            dumped/boot.img
-            dumped/uboot.img
-            dumped/system.img
-            dumped/vendor.img
+            /mnt/bin.zip
+            /mnt/etc.zip
+            /mnt/lib64.zip
+            /mnt/lib.zip
