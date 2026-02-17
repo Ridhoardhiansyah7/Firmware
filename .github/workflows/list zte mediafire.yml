@@ -1,4 +1,4 @@
-name: OTA Payload Inspector
+name: OTA Payload Inspector + Selective Upload
 
 on:
   workflow_dispatch:
@@ -20,6 +20,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # =========================================
+      # Install Tools
+      # =========================================
       - name: Install Tools
         run: |
           sudo apt update
@@ -105,21 +108,29 @@ jobs:
       # List partitions inside payload.bin (no full extract)
       # =========================================
       - name: List payload partitions
-        run: |
-          payload-dumper-go -l payload/payload.bin
+        run: payload-dumper-go -l payload/payload.bin
 
       # =========================================
-      # Optional Full Dump
+      # Optional Full Dump (log bersih)
       # =========================================
-      - name: Full payload dump (optional)
+      - name: Full payload dump
         if: ${{ github.event.inputs.full_dump == 'true' }}
         run: |
           mkdir -p dumped
-          payload-dumper-go -o dumped payload/payload.bin
+          # suppress ANSI escape codes untuk log bersih
+          payload-dumper-go -o dumped payload/payload.bin | sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g'
           ls -lh dumped
 
       # =========================================
-      # Cleanup
+      # Upload Selected Partitions
       # =========================================
-      - name: Cleanup
-        run: rm -rf level2 payload dumped || true
+      - name: Upload Selected Partitions
+        if: ${{ github.event.inputs.full_dump == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: selected-partitions
+          path: |
+            dumped/boot.img
+            dumped/uboot.img
+            dumped/system.img
+            dumped/vendor.img
