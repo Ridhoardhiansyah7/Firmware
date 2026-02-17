@@ -1,4 +1,4 @@
-name: OTA Payload Inspector + Selective Upload
+name: OTA Payload Inspector + Vendor Analyzer
 
 on:
   workflow_dispatch:
@@ -26,7 +26,7 @@ jobs:
       - name: Install Tools
         run: |
           sudo apt update
-          sudo apt install -y p7zip-full aria2 curl file golang-go liblzma-dev zip erofs-utils git
+          sudo apt install -y p7zip-full aria2 curl file golang-go liblzma-dev zip erofs-utils git e2fsprogs
 
       # =========================================
       # Resolve MediaFire Direct Link
@@ -51,44 +51,26 @@ jobs:
           aria2c -x 16 -s 16 -k 1M "${{ steps.link.outputs.direct_url }}" -o firmware.bin
 
       # =========================================
-      # Detect Archive Type
-      # =========================================
-      - name: Detect Archive Type
-        run: file firmware.bin
-
-      # =========================================
-      # List Level 1 Content
+      # List Level 1 Archive
       # =========================================
       - name: List Level 1 Archive
         run: 7z l firmware.bin
 
       # =========================================
-      # Extract Nested update.zip
+      # Extract update.zip
       # =========================================
       - name: Extract update.zip
         run: |
           mkdir -p level2
           INNER=$(7z l -slt firmware.bin | grep -i "Path = " | grep -i "update.zip" | sed 's/Path = //' | head -n1)
           if [ -n "$INNER" ]; then
-            echo "Found nested archive: $INNER"
             7z e firmware.bin "$INNER" -olevel2
           else
-            echo "No update.zip found inside archive"
+            echo "No update.zip found"
           fi
 
       # =========================================
-      # List update.zip Content
-      # =========================================
-      - name: List update.zip Content
-        run: |
-          if [ -f level2/update.zip ]; then
-            7z l level2/update.zip
-          else
-            echo "No nested update.zip to inspect"
-          fi
-
-      # =========================================
-      # Extract payload.bin + payload_properties.txt only
+      # Extract payload.bin
       # =========================================
       - name: Extract payload.bin
         run: |
@@ -105,77 +87,71 @@ jobs:
           echo "$HOME/go/bin" >> $GITHUB_PATH
 
       # =========================================
-      # List partitions inside payload.bin (no full extract)
+      # List partitions
       # =========================================
       - name: List payload partitions
         run: payload-dumper-go -l payload/payload.bin
 
       # =========================================
-      # Optional Full Dump (log bersih)
+      # Full payload dump (optional)
       # =========================================
       - name: Full payload dump
         if: ${{ github.event.inputs.full_dump == 'true' }}
         run: |
           mkdir -p dumped
-          # suppress ANSI escape codes untuk log bersih
           payload-dumper-go -o dumped payload/payload.bin | sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g'
           ls -lh dumped
 
       # =========================================
-      # Upload Selected Partitions
+      # Inspect vendor image
       # =========================================
-      - name: Upload Selected Partitions
-        if: ${{ github.event.inputs.full_dump == 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: selected-partitions
-          path: |
-            dumped/boot.img
-            dumped/uboot.img
-            dumped/system.img
-            dumped/vendor.img
-
-      # =========================================
-      # Mount vendor.img and copy data to ext4
-      # =========================================
-      - name: Convert vendor.img to ext4
+      - name: Analyze vendor image
         if: ${{ github.event.inputs.full_dump == 'true' }}
         run: |
-          if [ -f "dumped/vendor.img" ]; then
-            # Mount vendor.img menggunakan erofs-utils
-            mkdir -p /tmp/mount
-            sudo erofsfuse dumped/vendor.img /tmp/mount
-            
-            # Create an empty ext4 image (10GB)
-            dd if=/dev/zero of=/tmp/vendor.ext4 bs=1M count=10240
-            sudo mkfs.ext4 /tmp/vendor.ext4
-            
-            # Mount ext4 image
-            mkdir -p /tmp/vendor_mount
-            sudo mount /tmp/vendor.ext4 /tmp/vendor_mount
+          mkdir -p vendor_mount vendor_extract
 
-            # Copy data from mounted vendor.img (EROFS) to ext4 image
-            sudo cp -r /tmp/mount/* /tmp/vendor_mount/
+          echo "Filesystem detection:"
+          file dumped/vendor.img
 
-            # Unmount the ext4 image
-            sudo umount /tmp/vendor_mount
-            sudo umount /tmp/mount
+          echo "Attempting mount..."
 
-            # Verify ext4 image size and contents
-            ls -lh /tmp/vendor.ext4
+          sudo mount -t erofs dumped/vendor.img vendor_mount 2>/dev/null || \
+          sudo mount -t ext4 -o loop dumped/vendor.img vendor_mount || echo "Mount failed"
 
-            # Move to current directory
-            mv /tmp/vendor.ext4 ./vendor.ext4
+          if mount | grep -q vendor_mount; then
+            BASE="vendor_mount"
           else
-            echo "No vendor.img found in dumped folder"
+            echo "Mount failed, extracting via erofs..."
+            fsck.erofs --extract=vendor_extract dumped/vendor.img || true
+            BASE="vendor_extract"
           fi
 
+          echo "===== vendor/bin/hw ====="
+          ls -lah $BASE/bin/hw || echo "Not found"
+
+          echo "===== vendor/lib64 ====="
+          ls -lah $BASE/lib64 || echo "Not found"
+
+          echo "===== vendor/lib ====="
+          ls -lah $BASE/lib || echo "Not found"
+
+          echo "===== Searching .so files ====="
+          find $BASE -type f -name "*.so" | head -n 100
+
+          echo "===== HAL files ====="
+          find $BASE/bin/hw -type f 2>/dev/null || true
+
+          sudo umount vendor_mount 2>/dev/null || true
+
       # =========================================
-      # Upload Converted EXT4 vendor.img
+      # Upload selected artifacts
       # =========================================
-      - name: Upload Converted EXT4 vendor.img
+      - name: Upload vendor analysis
         if: ${{ github.event.inputs.full_dump == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: converted-vendor
-          path: ./vendor.ext4
+          name: vendor-analysis
+          path: |
+            dumped/vendor.img
+            vendor_mount
+            vendor_extract
