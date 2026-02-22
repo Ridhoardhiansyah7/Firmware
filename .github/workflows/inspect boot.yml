@@ -2,6 +2,11 @@ name: Inspect Boot Image
 
 on:
   workflow_dispatch:
+    inputs:
+      mediafire_url:
+        description: "MediaFire share link"
+        required: true
+        type: string
 
 jobs:
   inspect:
@@ -11,22 +16,35 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y wget curl xz-utils
+          sudo apt install -y wget curl unzip grep sed
 
       - name: Download magiskboot
         run: |
-          wget https://github.com/topjohnwu/Magisk/releases/latest/download/magiskboot-linux.zip
-          unzip magiskboot-linux.zip
+          wget -q https://github.com/topjohnwu/Magisk/releases/latest/download/magiskboot-linux.zip
+          unzip -o magiskboot-linux.zip
           chmod +x magiskboot
 
-      - name: Download boot.img from MediaFire
+      - name: Resolve MediaFire direct link
+        id: resolve
         run: |
-          wget -O boot.img "ISI_LINK_DIRECT_MEDIAFIRE_DI_SINI"
+          URL="${{ github.event.inputs.mediafire_url }}"
+          PAGE=$(curl -L -s "$URL")
+          DIRECT=$(echo "$PAGE" | grep -o 'https://download[^"]*' | head -n1)
+          echo "direct_link=$DIRECT" >> $GITHUB_OUTPUT
 
-      - name: Unpack boot.img
+      - name: Download boot.img
         run: |
-          ./magiskboot unpack boot.img
+          wget -O boot.img "${{ steps.resolve.outputs.direct_link }}"
 
-      - name: Show header info
+      - name: Check file
+        run: |
+          file boot.img
+          ls -lh boot.img
+
+      - name: Unpack boot image
+        run: |
+          ./magiskboot unpack boot.img || true
+
+      - name: Print header info
         run: |
           ./magiskboot unpack -h boot.img || true
