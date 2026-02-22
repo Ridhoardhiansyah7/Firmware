@@ -1,10 +1,10 @@
-name: Inspect Boot Image (magojohnji magiskboot)
+name: Inspect Boot Image Metadata (AIK)
 
 on:
   workflow_dispatch:
     inputs:
       IMG_URL:
-        description: "Direct boot.img URL (MediaFire / direct)"
+        description: "Direct boot.img URL"
         required: true
         type: string
 
@@ -13,21 +13,43 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Install dependencies
       - name: Install dependencies
-        run: sudo apt update && sudo apt install -y wget
+        run: |
+          sudo apt update
+          sudo apt install -y wget unzip
 
-      - name: Download boot.img
+      # 2. Download boot.img
+      - name: Download boot image
         run: |
           wget -O boot.img "${{ github.event.inputs.IMG_URL }}"
           file boot.img
           ls -lh boot.img
 
-      - name: Download magiskboot binary
+      # 3. Download AIK
+      - name: Download Android Image Kitchen
         run: |
-          wget https://raw.githubusercontent.com/magojohnji/magiskboot-linux/main/x86_64/magiskboot
-          chmod +x magiskboot
+          wget -O aik.zip https://github.com/osm0sis/Android-Image-Kitchen/archive/refs/heads/master.zip
+          unzip -o aik.zip
+          mv Android-Image-Kitchen-master AIK
+          chmod -R +x AIK/*
 
-      - name: Show boot metadata
+      # 4. Unpack boot.img
+      - name: Unpack boot.img
         run: |
-          echo "===== MAGISKBOOT HEADER INFO ====="
-          ./magiskboot unpack -h boot.img || true
+          mkdir output
+          AIK/unpackimg.sh boot.img
+          # File output/ will berisi ramdisk, kernel, dan header info
+
+      # 5. Extract header metadata
+      - name: Show header metadata
+        run: |
+          cat split_img/boot.img-ramdisk.gz || true
+          head -n 20 split_img/boot.img-header || true
+
+      # 6. Upload artifact
+      - name: Upload boot metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-metadata
+          path: split_img/
