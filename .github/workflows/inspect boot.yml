@@ -1,10 +1,10 @@
-name: Inspect Boot Image (Dynamic MediaFire)
+name: Inspect Boot Image (magojohnji magiskboot)
 
 on:
   workflow_dispatch:
     inputs:
-      mediafire_url:
-        description: "MediaFire share link"
+      IMG_URL:
+        description: "Direct boot.img URL (MediaFire / direct)"
         required: true
         type: string
 
@@ -14,41 +14,20 @@ jobs:
 
     steps:
       - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y wget curl grep sed python3
-
-      - name: Download AOSP unpack_bootimg tool
-        run: |
-          wget https://raw.githubusercontent.com/aosp-mirror/platform_system_tools_mkbootimg/master/unpack_bootimg.py
-          chmod +x unpack_bootimg.py
-
-      - name: Resolve MediaFire direct link
-        id: resolve
-        run: |
-          URL="${{ github.event.inputs.mediafire_url }}"
-          echo "Resolving MediaFire link..."
-          PAGE=$(curl -L -s "$URL")
-          DIRECT=$(echo "$PAGE" | grep -o 'https://download[^"]*' | head -n1)
-
-          if [ -z "$DIRECT" ]; then
-            echo "Failed to resolve direct link"
-            exit 1
-          fi
-
-          echo "Direct link found"
-          echo "direct_link=$DIRECT" >> $GITHUB_OUTPUT
+        run: sudo apt update && sudo apt install -y wget
 
       - name: Download boot.img
         run: |
-          wget -O boot.img "${{ steps.resolve.outputs.direct_link }}"
-
-      - name: Verify file
-        run: |
+          wget -O boot.img "${{ github.event.inputs.IMG_URL }}"
           file boot.img
           ls -lh boot.img
 
-      - name: Extract boot metadata
+      - name: Download magiskboot binary
         run: |
-          echo "===== BOOT HEADER INFO ====="
-          python3 unpack_bootimg.py --boot_img boot.img
+          wget https://raw.githubusercontent.com/magojohnji/magiskboot-linux/main/x86_64/magiskboot
+          chmod +x magiskboot
+
+      - name: Show boot metadata
+        run: |
+          echo "===== MAGISKBOOT HEADER INFO ====="
+          ./magiskboot unpack -h boot.img || true
