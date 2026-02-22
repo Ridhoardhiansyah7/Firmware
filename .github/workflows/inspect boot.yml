@@ -1,4 +1,4 @@
-name: Inspect Boot Image
+name: Inspect Boot Image (Dynamic MediaFire)
 
 on:
   workflow_dispatch:
@@ -16,35 +16,48 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y wget curl unzip grep sed
-
-      - name: Download magiskboot
-        run: |
-          wget -q https://github.com/topjohnwu/Magisk/releases/latest/download/magiskboot-linux.zip
-          unzip -o magiskboot-linux.zip
-          chmod +x magiskboot
+          sudo apt install -y wget curl grep sed \
+            android-sdk-libsparse-utils
 
       - name: Resolve MediaFire direct link
         id: resolve
         run: |
           URL="${{ github.event.inputs.mediafire_url }}"
+          echo "Resolving MediaFire link..."
           PAGE=$(curl -L -s "$URL")
           DIRECT=$(echo "$PAGE" | grep -o 'https://download[^"]*' | head -n1)
+
+          if [ -z "$DIRECT" ]; then
+            echo "Failed to resolve direct link"
+            exit 1
+          fi
+
+          echo "Direct link found"
           echo "direct_link=$DIRECT" >> $GITHUB_OUTPUT
 
       - name: Download boot.img
         run: |
           wget -O boot.img "${{ steps.resolve.outputs.direct_link }}"
 
-      - name: Check file
+      - name: Verify file
         run: |
           file boot.img
           ls -lh boot.img
 
-      - name: Unpack boot image
+      - name: Extract boot metadata
         run: |
-          ./magiskboot unpack boot.img || true
+          mkdir output
+          unpackbootimg -i boot.img -o output
 
-      - name: Print header info
+      - name: Show extracted metadata
         run: |
-          ./magiskboot unpack -h boot.img || true
+          echo "===== BOOT METADATA ====="
+          cat output/*.txt || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-analysis
+          path: |
+            boot.img
+            output/
