@@ -16,8 +16,11 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y wget curl grep sed \
-            android-sdk-libsparse-utils
+          sudo apt install -y wget curl grep sed python3-pip
+
+      - name: Install AOSP boot tools
+        run: |
+          pip install mkbootimg
 
       - name: Resolve MediaFire direct link
         id: resolve
@@ -44,20 +47,7 @@ jobs:
           file boot.img
           ls -lh boot.img
 
-      - name: Extract boot metadata
+      - name: Print boot header info
         run: |
-          mkdir output
-          unpackbootimg -i boot.img -o output
-
-      - name: Show extracted metadata
-        run: |
-          echo "===== BOOT METADATA ====="
-          cat output/*.txt || true
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: boot-analysis
-          path: |
-            boot.img
-            output/
+          echo "===== BOOT HEADER INFO ====="
+          unpack_bootimg --boot_img boot.img --format=mkbootimg
