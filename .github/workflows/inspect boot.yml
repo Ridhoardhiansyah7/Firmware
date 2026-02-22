@@ -16,11 +16,12 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y wget curl grep sed python3-pip
+          sudo apt install -y wget curl grep sed python3
 
-      - name: Install AOSP boot tools
+      - name: Download AOSP unpack_bootimg tool
         run: |
-          pip install mkbootimg
+          wget https://raw.githubusercontent.com/aosp-mirror/platform_system_tools_mkbootimg/master/unpack_bootimg.py
+          chmod +x unpack_bootimg.py
 
       - name: Resolve MediaFire direct link
         id: resolve
@@ -47,7 +48,7 @@ jobs:
           file boot.img
           ls -lh boot.img
 
-      - name: Print boot header info
+      - name: Extract boot metadata
         run: |
           echo "===== BOOT HEADER INFO ====="
-          unpack_bootimg --boot_img boot.img --format=mkbootimg
+          python3 unpack_bootimg.py --boot_img boot.img
