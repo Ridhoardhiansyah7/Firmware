@@ -34,19 +34,20 @@ jobs:
           mv Android-Image-Kitchen-AIK-Linux AIK
           chmod -R +x AIK/*
 
-      # 4. Unpack boot.img
-      - name: Unpack boot.img
+      # 4. Extract boot.img header only
+      - name: Show boot.img header metadata
         run: |
-          mkdir output
+          mkdir -p output
+          # AIK punya script unpackimg.sh, tapi header ada di split_img/boot.img-header
           AIK/unpackimg.sh boot.img
+          echo "===== BOOT IMAGE HEADER ====="
+          cat split_img/boot.img-header
+          echo ""
+          echo "===== KEY METADATA ====="
+          # Ambil page size, kernel offset, ramdisk offset, second offset, tags offset
+          grep -E "page_size|kernel_offset|ramdisk_offset|second_offset|tags_offset" split_img/boot.img-header || true
 
-      # 5. Show header metadata
-      - name: Show header info
-        run: |
-          echo "===== BOOT HEADER INFO ====="
-          head -n 20 split_img/boot.img-header || true
-
-      # 6. Upload artifact
+      # 5. Upload artifact (optional)
       - name: Upload boot metadata
         uses: actions/upload-artifact@v4
         with:
