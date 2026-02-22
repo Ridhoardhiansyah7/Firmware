@@ -1,0 +1,32 @@
+name: Inspect Boot Image
+
+on:
+  workflow_dispatch:
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y wget curl xz-utils
+
+      - name: Download magiskboot
+        run: |
+          wget https://github.com/topjohnwu/Magisk/releases/latest/download/magiskboot-linux.zip
+          unzip magiskboot-linux.zip
+          chmod +x magiskboot
+
+      - name: Download boot.img from MediaFire
+        run: |
+          wget -O boot.img "ISI_LINK_DIRECT_MEDIAFIRE_DI_SINI"
+
+      - name: Unpack boot.img
+        run: |
+          ./magiskboot unpack boot.img
+
+      - name: Show header info
+        run: |
+          ./magiskboot unpack -h boot.img || true
