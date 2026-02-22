@@ -1,10 +1,10 @@
-name: Inspect Boot Image Metadata (AIK)
+name: Inspect Boot Image Metadata (AIK-Linux)
 
 on:
   workflow_dispatch:
     inputs:
       IMG_URL:
-        description: "Direct boot.img URL"
+        description: "Direct boot.img URL (MediaFire / direct)"
         required: true
         type: string
 
@@ -26,12 +26,12 @@ jobs:
           file boot.img
           ls -lh boot.img
 
-      # 3. Download AIK
-      - name: Download Android Image Kitchen
+      # 3. Download AIK-Linux
+      - name: Download Android Image Kitchen Linux branch
         run: |
-          wget -O aik.zip https://github.com/osm0sis/Android-Image-Kitchen/archive/refs/heads/master.zip
+          wget -O aik.zip https://github.com/osm0sis/Android-Image-Kitchen/archive/refs/heads/AIK-Linux.zip
           unzip -o aik.zip
-          mv Android-Image-Kitchen-master AIK
+          mv Android-Image-Kitchen-AIK-Linux AIK
           chmod -R +x AIK/*
 
       # 4. Unpack boot.img
@@ -39,12 +39,11 @@ jobs:
         run: |
           mkdir output
           AIK/unpackimg.sh boot.img
-          # File output/ will berisi ramdisk, kernel, dan header info
 
-      # 5. Extract header metadata
-      - name: Show header metadata
+      # 5. Show header metadata
+      - name: Show header info
         run: |
-          cat split_img/boot.img-ramdisk.gz || true
+          echo "===== BOOT HEADER INFO ====="
           head -n 20 split_img/boot.img-header || true
 
       # 6. Upload artifact
