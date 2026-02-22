@@ -1,10 +1,10 @@
-name: Inspect Boot Image Metadata (AIK-Linux)
+name: Inspect Boot Image Metadata (AIK-Linux + MediaFire)
 
 on:
   workflow_dispatch:
     inputs:
       IMG_URL:
-        description: "Direct boot.img URL (MediaFire / direct)"
+        description: "MediaFire / direct boot.img URL"
         required: true
         type: string
 
@@ -17,12 +17,28 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y wget unzip
+          sudo apt install -y wget unzip curl grep sed
 
-      # 2. Download boot.img
+      # 2. Download boot.img (support MediaFire)
       - name: Download boot image
         run: |
-          wget -O boot.img "${{ github.event.inputs.IMG_URL }}"
+          URL="${{ github.event.inputs.IMG_URL }}"
+          # cek apakah link MediaFire
+          if [[ "$URL" == *"mediafire.com"* ]]; then
+            echo "Detected MediaFire link, extracting direct download URL..."
+            # ambil halaman HTML
+            HTML=$(curl -sL "$URL")
+            # cari link direct download (MediaFire biasanya di <a href="https://download...">)
+            DIRECT=$(echo "$HTML" | grep -o 'https://download[^"]*' | head -n 1)
+            if [ -z "$DIRECT" ]; then
+              echo "Cannot find direct download link!"
+              exit 1
+            fi
+            echo "Direct download URL: $DIRECT"
+            wget -O boot.img "$DIRECT"
+          else
+            wget -O boot.img "$URL"
+          fi
           file boot.img
           ls -lh boot.img
 
@@ -34,20 +50,22 @@ jobs:
           mv Android-Image-Kitchen-AIK-Linux AIK
           chmod -R +x AIK/*
 
-      # 4. Extract boot.img header only
-      - name: Show boot.img header metadata
+      # 4. Unpack boot.img
+      - name: Unpack boot.img using AIK
         run: |
-          mkdir -p output
-          # AIK punya script unpackimg.sh, tapi header ada di split_img/boot.img-header
+          mkdir -p split_img
           AIK/unpackimg.sh boot.img
+
+      # 5. Show header metadata
+      - name: Show boot image header
+        run: |
           echo "===== BOOT IMAGE HEADER ====="
-          cat split_img/boot.img-header
+          cat split_img/boot.img-header || true
           echo ""
           echo "===== KEY METADATA ====="
-          # Ambil page size, kernel offset, ramdisk offset, second offset, tags offset
           grep -E "page_size|kernel_offset|ramdisk_offset|second_offset|tags_offset" split_img/boot.img-header || true
 
-      # 5. Upload artifact (optional)
+      # 6. Upload artifact
       - name: Upload boot metadata
         uses: actions/upload-artifact@v4
         with:
