@@ -41,7 +41,7 @@ jobs:
 
           elif [[ "$FILE_TYPE" == *"7-zip archive"* ]]; then
             echo "Extracting as 7Z..."
-            7z x firmware -o firmware_out
+            7z x firmware -ofirmware_out
 
           elif [[ "$FILE_TYPE" == *"tar archive"* ]]; then
             echo "Extracting as TAR..."
