@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       firmware_url:
-        description: "Direct Realme OTA zip link"
+        description: "Direct firmware link (zip/7z/tar/etc)"
         required: true
 
 jobs:
@@ -17,20 +17,49 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Tools
-        run: sudo apt update && sudo apt install -y unzip aria2
-
-      - name: Download OTA
         run: |
-          echo "Downloading OTA zip..."
-          aria2c -x 16 -s 16 -k 1M "${{ github.event.inputs.firmware_url }}" -o firmware.zip
+          sudo apt update
+          sudo apt install -y unzip aria2 p7zip-full tar
 
-      - name: Extract OTA
-        run: unzip firmware.zip -d firmware
+      - name: Download Firmware
+        run: |
+          echo "Downloading firmware..."
+          aria2c -x 16 -s 16 -k 1M "${{ github.event.inputs.firmware_url }}" -o firmware
+
+      - name: Detect & Extract
+        run: |
+          echo "Detecting file type..."
+          FILE_TYPE=$(file -b firmware)
+
+          echo "File type: $FILE_TYPE"
+
+          mkdir -p firmware_out
+
+          if [[ "$FILE_TYPE" == *"Zip archive"* ]]; then
+            echo "Extracting as ZIP..."
+            unzip firmware -d firmware_out
+
+          elif [[ "$FILE_TYPE" == *"7-zip archive"* ]]; then
+            echo "Extracting as 7Z..."
+            7z x firmware -o firmware_out
+
+          elif [[ "$FILE_TYPE" == *"tar archive"* ]]; then
+            echo "Extracting as TAR..."
+            tar -xf firmware -C firmware_out
+
+          elif [[ "$FILE_TYPE" == *"gzip compressed"* ]]; then
+            echo "Extracting as TAR.GZ..."
+            tar -xzf firmware -C firmware_out
+
+          else
+            echo "Unknown format, trying 7z fallback..."
+            7z x firmware -o firmware_out || true
+          fi
 
       - name: List All Files
         run: |
           echo "All files in firmware:"
-          find firmware -type f | sort > firmware_file_list.txt
+          find firmware_out -type f | sort > firmware_file_list.txt
           cat firmware_file_list.txt
 
       - name: Upload File List
